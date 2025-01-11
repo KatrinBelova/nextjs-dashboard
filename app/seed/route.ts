@@ -1,38 +1,54 @@
 import bcrypt from 'bcrypt';
-import { db } from '@vercel/postgres';
+import { Pool, PoolClient } from 'pg';
 import { invoices, customers, revenue, users } from '../lib/placeholder-data';
 
-const client = await db.connect();
+// Initialize the PostgreSQL pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
 
-async function seedUsers() {
-  await client.sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
-  await client.sql`
+// Test database connection
+pool.query('SELECT NOW()', (err: Error, res: Record<string, unknown>) => {
+  if (err) {
+    console.error('Connection error:', err);
+  } else {
+    console.log('Connection successful:', res?.rows);
+  }
+});
+
+// Define seedUsers function
+async function seedUsers(client: PoolClient): Promise<void> {
+  await client.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
+  await client.query(`
     CREATE TABLE IF NOT EXISTS users (
       id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
       email TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL
     );
-  `;
+  `);
 
-  const insertedUsers = await Promise.all(
-    users.map(async (user) => {
-      const hashedPassword = await bcrypt.hash(user.password, 10);
-      return client.sql`
-        INSERT INTO users (id, name, email, password)
-        VALUES (${user.id}, ${user.name}, ${user.email}, ${hashedPassword})
-        ON CONFLICT (id) DO NOTHING;
-      `;
-    }),
-  );
-
-  return insertedUsers;
+  for (const user of users) {
+    const hashedPassword = await bcrypt.hash(user.password, 10);
+    await client.query(
+      `
+      INSERT INTO users (id, name, email, password)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (id) DO NOTHING;
+      `,
+      [user.id, user.name, user.email, hashedPassword]
+    );
+  }
 }
 
-async function seedInvoices() {
-  await client.sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
+// Define seedInvoices function
+async function seedInvoices(client: PoolClient): Promise<void> {
+  await client.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
 
-  await client.sql`
+  await client.query(`
     CREATE TABLE IF NOT EXISTS invoices (
       id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
       customer_id UUID NOT NULL,
@@ -40,79 +56,89 @@ async function seedInvoices() {
       status VARCHAR(255) NOT NULL,
       date DATE NOT NULL
     );
-  `;
+  `);
 
-  const insertedInvoices = await Promise.all(
-    invoices.map(
-      (invoice) => client.sql`
-        INSERT INTO invoices (customer_id, amount, status, date)
-        VALUES (${invoice.customer_id}, ${invoice.amount}, ${invoice.status}, ${invoice.date})
-        ON CONFLICT (id) DO NOTHING;
+  for (const invoice of invoices) {
+    await client.query(
+      `
+      INSERT INTO invoices (customer_id, amount, status, date)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (id) DO NOTHING;
       `,
-    ),
-  );
-
-  return insertedInvoices;
+      [invoice.customer_id, invoice.amount, invoice.status, invoice.date]
+    );
+  }
 }
 
-async function seedCustomers() {
-  await client.sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
+// Define seedCustomers function
+async function seedCustomers(client: PoolClient): Promise<void> {
+  await client.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
 
-  await client.sql`
+  await client.query(`
     CREATE TABLE IF NOT EXISTS customers (
       id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
       email VARCHAR(255) NOT NULL,
       image_url VARCHAR(255) NOT NULL
     );
-  `;
+  `);
 
-  const insertedCustomers = await Promise.all(
-    customers.map(
-      (customer) => client.sql`
-        INSERT INTO customers (id, name, email, image_url)
-        VALUES (${customer.id}, ${customer.name}, ${customer.email}, ${customer.image_url})
-        ON CONFLICT (id) DO NOTHING;
+  for (const customer of customers) {
+    await client.query(
+      `
+      INSERT INTO customers (id, name, email, image_url)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (id) DO NOTHING;
       `,
-    ),
-  );
-
-  return insertedCustomers;
+      [customer.id, customer.name, customer.email, customer.image_url]
+    );
+  }
 }
 
-async function seedRevenue() {
-  await client.sql`
+// Define seedRevenue function
+async function seedRevenue(client: PoolClient): Promise<void> {
+  await client.query(`
     CREATE TABLE IF NOT EXISTS revenue (
       month VARCHAR(4) NOT NULL UNIQUE,
       revenue INT NOT NULL
     );
-  `;
+  `);
 
-  const insertedRevenue = await Promise.all(
-    revenue.map(
-      (rev) => client.sql`
-        INSERT INTO revenue (month, revenue)
-        VALUES (${rev.month}, ${rev.revenue})
-        ON CONFLICT (month) DO NOTHING;
+  for (const rev of revenue) {
+    await client.query(
+      `
+      INSERT INTO revenue (month, revenue)
+      VALUES ($1, $2)
+      ON CONFLICT (month) DO NOTHING;
       `,
-    ),
-  );
-
-  return insertedRevenue;
+      [rev.month, rev.revenue]
+    );
+  }
 }
 
-export async function GET() {
+// Define GET handler
+export async function GET(): Promise<Response> {
+  const client = await pool.connect();
   try {
-    await client.sql`BEGIN`;
-    await seedUsers();
-    await seedCustomers();
-    await seedInvoices();
-    await seedRevenue();
-    await client.sql`COMMIT`;
+    await client.query(`BEGIN`);
+    await seedUsers(client);
+    await seedCustomers(client);
+    await seedInvoices(client);
+    await seedRevenue(client);
+    await client.query(`COMMIT`);
 
-    return Response.json({ message: 'Database seeded successfully' });
+    return new Response(
+      JSON.stringify({ message: 'Database seeded successfully' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
   } catch (error) {
-    await client.sql`ROLLBACK`;
-    return Response.json({ error }, { status: 500 });
+    await client.query(`ROLLBACK`);
+    console.error('Error seeding database:', error);
+    return new Response(
+      JSON.stringify({ error: (error as Error).message }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  } finally {
+    client.release();
   }
 }
