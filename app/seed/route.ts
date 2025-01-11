@@ -11,7 +11,7 @@ const pool = new Pool({
 });
 
 // Test database connection
-pool.query('SELECT NOW()', (err: Error, res: Record<string, unknown>) => {
+pool.query('SELECT NOW()', (err, res) => {
   if (err) {
     console.error('Connection error:', err);
   } else {
@@ -19,7 +19,6 @@ pool.query('SELECT NOW()', (err: Error, res: Record<string, unknown>) => {
   }
 });
 
-// Define seedUsers function
 async function seedUsers(client: PoolClient): Promise<void> {
   await client.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
   await client.query(`
@@ -44,7 +43,6 @@ async function seedUsers(client: PoolClient): Promise<void> {
   }
 }
 
-// Define seedInvoices function
 async function seedInvoices(client: PoolClient): Promise<void> {
   await client.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
 
@@ -70,7 +68,6 @@ async function seedInvoices(client: PoolClient): Promise<void> {
   }
 }
 
-// Define seedCustomers function
 async function seedCustomers(client: PoolClient): Promise<void> {
   await client.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
 
@@ -95,7 +92,6 @@ async function seedCustomers(client: PoolClient): Promise<void> {
   }
 }
 
-// Define seedRevenue function
 async function seedRevenue(client: PoolClient): Promise<void> {
   await client.query(`
     CREATE TABLE IF NOT EXISTS revenue (
@@ -116,7 +112,6 @@ async function seedRevenue(client: PoolClient): Promise<void> {
   }
 }
 
-// Define GET handler
 export async function GET(): Promise<Response> {
   const client = await pool.connect();
   try {
