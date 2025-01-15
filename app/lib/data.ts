@@ -15,15 +15,7 @@ const sql = neon(process.env.DATABASE_URL || '');
 
 export async function fetchRevenue() {
   try {
-    // Artificially delay a response for demo purposes.
-    // Don't do this in production :)
-
-    console.log('Fetching revenue data...');
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
     const data = await sql`SELECT * FROM revenue`;
-
-    console.log('Data fetch completed after 3 seconds.');
 
     return data as Revenue[];
   } catch (error) {
